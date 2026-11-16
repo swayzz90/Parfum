@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Duftfinder – Welcher Duft passt zu dir?</title>
+  <meta name="description" content="Finde in 60 Sekunden das Parfüm, das zu deinem Charakter, Anlass und Budget passt.">
+  <meta name="theme-color" content="#f5efe6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#15120f" media="(prefers-color-scheme: dark)">
+  <meta name="color-scheme" content="light dark">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Duftfinder">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <button class="brand" data-action="home" aria-label="Zur Startseite">Duftfinder</button>
+    <button class="saved-link" data-action="merkliste" aria-label="Merkliste öffnen">♡ <span id="saved-count">0</span></button>
+  </header>
+
+  <main id="app" aria-live="polite"></main>
+
+  <footer class="footer">
+    <p>Prototyp · Preisklassen sind Richtwerte, echte Preise folgen.</p>
+    <p><a href="impressum.html">Impressum</a> · <a href="datenschutz.html">Datenschutz</a></p>
+  </footer>
+
+  <script src="data.js"></script>
+  <script src="duftbilder.js"></script>
+  <script src="match.js"></script>
+  <script src="app.js"></script>
+  <script>
+    if ("serviceWorker" in navigator && location.protocol === "https:") {
+      navigator.serviceWorker.register("sw.js").catch(() => {});
+    }
+  </script>
+</body>
+</html>
