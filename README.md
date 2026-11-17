@@ -1,4 +1,4 @@
-# Duftfinder – Prototyp v5
+# Duftfinder – Prototyp v6
 
 Parfüm-Empfehlung nach Charakter, Anlass, Jahreszeit und Budget. Reine Web-App (HTML, CSS, JavaScript), kein Server nötig.
 
@@ -28,7 +28,7 @@ In `data.js` einen Eintrag in `DUEFTE` kopieren und anpassen:
 - `akk`: Akkord-Stärken 0 bis 1, nur Schlüssel aus `AKKORDE`
 
 ## Nach einer Änderung
-In `sw.js` die Zeile `const CACHE = "duftfinder-v5"` hochzählen (v6, v7 …), damit installierte Handys die neue Version laden.
+In `sw.js` die Zeile `const CACHE = "duftfinder-v6"` hochzählen (v7, v8 …), damit installierte Handys die neue Version laden.
 
 ## Bilder und Preise (feed.json)
 Sobald die Awin-Feeds da sind, schreibt der Feed-Job pro Duft-ID einen Eintrag in `feed.json`:
@@ -52,3 +52,19 @@ Mit `bild` zeigt die Karte das Produktfoto statt des gezeichneten Flakons. Lädt
 - **„Du magst schon einen Duft?“** auf der Startseite: Suche nach Marke oder Name, dann drei Düfte in ähnlicher Richtung (bekannte Marke, Nische, günstiger) plus weitere. Logik in `match.js` (`aehnlicheDuefte`, `sucheDuft`).
 - **Anonyme Klickzählung mit GoatCounter:** ist aus, solange in `app.js` oben `const ZAEHLER = ""` leer ist. Einschalten: kostenlos auf goatcounter.com anmelden, Code eintragen (z. B. `"duftfinder"`). Gezählt werden u. a. Quiz-Ergebnisse, Suchen, Shop- und Probe-Klicks pro Duft, Merken, Preisalarm, 👍/👎. Datenschutzerklärung Abschnitt 4 dann anpassen.
 - **Dunkelmodus:** folgt automatisch der Handy-Einstellung. Farben stehen in `style.css` oben unter `prefers-color-scheme: dark`.
+
+## Neue Einstiege, Wirkung, Preis-Regler (v6)
+- **Drei Wege auf der Startseite:** „Nach Duftwelt“ (Standard, 1–3 Bilder wie „Kaminfeuer an einem Winterabend“), „Ich mag schon einen Duft“ und „Nach Persönlichkeit“ (das alte Quiz). „Als Geschenk finden“ nutzt den Persönlichkeits-Weg.
+- **Statt „Wofür“:** Wirkung (1–2 aus 6), Regler „Wie nah darf er kommen?“ (hautnah bis füllt den Raum), Tagsüber/Abends/Beides, Jahreszeit und Schalter „Soll im Büro okay sein“.
+- **Preis-Regler** von 20 € bis 500 € plus „unbegrenzt“, dazu ein Zahlenfeld für jeden Betrag. Ohne echte Preise schätzt die App den typischen Preis der Preisklasse (`PREIS_TYPISCH` in `data.js`).
+- Duftwelten, Wirkungen, Nähe-Texte und Preisstufen stehen in `data.js` und lassen sich dort ändern.
+
+### feed.json mit mehreren Shops
+Pro Duft ist auch eine Liste von Angeboten möglich. Die App zeigt das günstigste als „Bester Preis“, bis zu drei weitere darunter, dann Suchlinks zu den übrigen Shops und Idealo ganz unten:
+
+```json
+{ "dior-fahrenheit": { "bild": "https://…", "angebote": [
+  { "shop": "Notino", "preis": 64.5, "link": "https://…" },
+  { "shop": "Douglas", "preis": 79.95, "link": "https://…" } ] } }
+```
+Das alte Format mit `preis`, `shop`, `link` funktioniert weiter.

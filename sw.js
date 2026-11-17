@@ -1,5 +1,5 @@
 /* Einfacher Offline-Cache. Bei Änderungen die Version hochzählen, damit Handys neu laden. */
-const CACHE = "duftfinder-v5";
+const CACHE = "duftfinder-v6";
 const DATEIEN = ["./", "index.html", "style.css", "data.js", "duftbilder.js", "match.js", "app.js", "manifest.json", "feed.json", "impressum.html", "datenschutz.html", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", e => {

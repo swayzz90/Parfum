@@ -1,6 +1,6 @@
 # Duftfinder – Roadmap und Notizen
 
-Stand: v5 (Deutschland-Version, Test auf GitHub Pages). Hier steht, was wir später machen und warum noch nicht.
+Stand: v6 (Deutschland-Version, Test auf GitHub Pages). Hier steht, was wir später machen und warum noch nicht.
 
 ## Grundsatz
 Erst Deutschland fertig und mit echten Nutzern getestet, dann ausbauen. Bevor etwas Neues gebaut wird, muss die deutsche Version zeigen, dass Nutzer klicken und Provision fließt.
@@ -45,7 +45,14 @@ Checkliste pro neuem Markt:
 ## 4. Erledigt
 - v4: Merkliste, Preisalarm mit Wunschpreis, „Bester Preis“, Wunschliste teilen
 - v5: Duft-Suche „Du magst schon einen Duft?“, Rechtstext-Vorlagen, anonyme Klickzählung (vorbereitet), Dunkelmodus
+- v6 (nach Tester-Feedback): drei Einstiege (Duftwelt, ähnlicher Duft, Persönlichkeit), Wirkung + Nähe-Regler + Tag/Abend + Büro statt Anlass, Preis-Regler bis 500 €/unbegrenzt mit Zahlenfeld, Partner-Preise oben und Idealo nach unten
 
-## 5. Ideen für die deutsche Version (wenn Tester danach fragen)
+## 5. Preisvergleich und Idealo
+- Solange keine Feeds da sind, bleibt Idealo oben als einziger echter Preisvergleich.
+- Mit Feeds: eigene Partner-Preise oben („Preise bei unseren Partner-Shops“), Idealo ganz unten. Nicht „vollständiger Preisvergleich“ versprechen, weil nur Partner-Shops enthalten sind.
+- [ ] Im Awin-Konto prüfen, ob es ein offenes Idealo-Partnerprogramm für Deutschland gibt. Wenn ja, Idealo-Link durch Partner-Link ersetzen.
+- [ ] Beim Feed-Job festlegen, welche Flaschengröße als Preis zählt (Vorschlag: günstigster Preis, umgerechnet auf 50 ml)
+
+## 6. Ideen für die deutsche Version (wenn Tester danach fragen)
 - „Neu mischen“ und Ausschlüsse (z. B. „nicht süß“)
 - Zwei Düfte nebeneinander vergleichen

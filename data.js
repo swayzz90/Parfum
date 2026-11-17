@@ -38,15 +38,47 @@ const EIGENSCHAFTEN = [
   { id: "klassisch", label: "Klassisch", akk: { aromatisch: 2, zitrisch: 1, pudrig: 1, holzig: 1, blumig: 1 }, int: 0 }
 ];
 
-/* Anlass: Ziel-Intensität und Akkord-Bonus (negativ = passt schlecht) */
-const ANLAESSE = [
-  { id: "alltag", label: "Alltag", tipp: "unkompliziert, geht immer", ziel: 3, akk: {} },
-  { id: "buero", label: "Büro", tipp: "dezent, niemand soll husten", ziel: 2, akk: { frisch: 1, zitrisch: 1, moschus: 1, pudrig: 0.5, gourmand: -1, oud: -1, tabak: -0.5 } },
-  { id: "date", label: "Date", tipp: "nah, warm, einprägsam", ziel: 3.5, akk: { amber: 1, vanille: 1, rose: 0.5, ledrig: 0.5, moschus: 0.5 } },
-  { id: "abend", label: "Abend & Party", tipp: "darf auffallen", ziel: 4.5, akk: { amber: 1, suess: 1, oud: 0.5, wuerzig: 0.5 } },
-  { id: "sport", label: "Sport & Freizeit", tipp: "leicht, sauber, frisch", ziel: 2, akk: { frisch: 1.5, zitrisch: 1.5, aquatisch: 1, gourmand: -1.5, oud: -1.5, amber: -1, tabak: -1 } },
-  { id: "besonders", label: "Besonderer Anlass", tipp: "Hochzeit, Gala, Abschluss", ziel: 4, akk: { pudrig: 1, rose: 0.5, weihrauch: 0.5, oud: 0.5, amber: 0.5 } }
+/* Duftwelten (v6): Bilder statt Persönlichkeit. Man wählt 1–3, sie ergeben das Akkord-Profil. int verschiebt die Intensität leicht. */
+const DUFTWELTEN = [
+  { id: "waesche", icon: "🧺", label: "Frisch gewaschene Wäsche im Wind", kurz: "frische Wäsche", akk: { moschus: 3, frisch: 2, pudrig: 1, zitrisch: 1 }, int: -0.5 },
+  { id: "meer", icon: "🌊", label: "Salzige Meeresluft am Strand", kurz: "Meeresluft", akk: { aquatisch: 3, frisch: 2, zitrisch: 1, holzig: 0.5 }, int: -0.3 },
+  { id: "zitrus", icon: "🍋", label: "Zitronen und Bergamotte am Morgen", kurz: "Zitrus am Morgen", akk: { zitrisch: 3, frisch: 2, aromatisch: 1 }, int: -0.5 },
+  { id: "wald", icon: "🌲", label: "Ein Wald nach dem Regen", kurz: "Wald nach dem Regen", akk: { gruen: 3, holzig: 2, aromatisch: 1 }, int: -0.3 },
+  { id: "blumen", icon: "💐", label: "Ein Strauß Rosen und Pfingstrosen", kurz: "Blumenstrauß", akk: { rose: 3, blumig: 3, fruchtig: 1 }, int: 0 },
+  { id: "puder", icon: "🤍", label: "Weicher Kaschmir und Puder", kurz: "Kaschmir und Puder", akk: { pudrig: 3, moschus: 2, blumig: 1 }, int: -0.3 },
+  { id: "frucht", icon: "🍓", label: "Reife Beeren und süße Früchte", kurz: "reife Früchte", akk: { fruchtig: 3, suess: 2, blumig: 1 }, int: 0 },
+  { id: "vanille", icon: "🍮", label: "Warme Vanille und Karamell", kurz: "Vanille und Karamell", akk: { vanille: 3, gourmand: 3, suess: 2 }, int: 0.3 },
+  { id: "holz", icon: "🪵", label: "Warmes Sandel- und Zedernholz", kurz: "warmes Holz", akk: { holzig: 3, moschus: 1, amber: 1 }, int: 0 },
+  { id: "kamin", icon: "🔥", label: "Kaminfeuer an einem Winterabend", kurz: "Kaminfeuer", akk: { rauchig: 3, holzig: 2, amber: 1, weihrauch: 1 }, int: 0.5 },
+  { id: "bibliothek", icon: "📚", label: "Alte Bibliothek mit Ledersesseln", kurz: "alte Bibliothek", akk: { ledrig: 3, tabak: 2, holzig: 2, amber: 0.5 }, int: 0.3 },
+  { id: "gewuerz", icon: "🌶️", label: "Ein Gewürzmarkt im Orient", kurz: "Gewürzmarkt", akk: { wuerzig: 3, amber: 2, oud: 1, weihrauch: 1 }, int: 0.5 }
 ];
+const MAX_WELTEN = 3;
+
+/* Wie soll der Duft wirken? (1–2 wählbar) – Akkord-Bonus und kleine Verschiebung der Intensität */
+const WIRKUNGEN = [
+  { id: "gepflegt", label: "Gepflegt & sauber", akk: { moschus: 1, frisch: 1, pudrig: 0.5, zitrisch: 0.5, oud: -1, gourmand: -0.5 }, int: -0.3 },
+  { id: "frisch", label: "Frisch & wach", akk: { zitrisch: 1, frisch: 1, aquatisch: 0.7, gruen: 0.5, vanille: -0.5, oud: -1, tabak: -0.7 }, int: -0.3 },
+  { id: "elegant", label: "Elegant", akk: { pudrig: 1, blumig: 0.5, rose: 0.5, weihrauch: 0.5, moschus: 0.5 }, int: 0 },
+  { id: "selbstbewusst", label: "Selbstbewusst", akk: { ledrig: 1, holzig: 1, wuerzig: 0.7, aromatisch: 0.5 }, int: 0.3 },
+  { id: "gemuetlich", label: "Gemütlich", akk: { vanille: 1, gourmand: 1, tabak: 0.5, amber: 0.5 }, int: 0 },
+  { id: "verfuehrerisch", label: "Verführerisch", akk: { amber: 1, vanille: 1, moschus: 0.5, rose: 0.5, oud: 0.5 }, int: 0.3 }
+];
+const MAX_WIRKUNG = 2;
+
+/* Wie nah darf er kommen? Reglerwert = Wunsch-Intensität 1–5 */
+const NAEHE = ["", "Hautnah", "Dezent", "Normal", "Präsent", "Füllt den Raum"];
+const NAEHE_TIPP = ["", "Nur wer dich umarmt, riecht ihn", "Im Gespräch spürbar", "Eine Armlänge um dich herum", "Man bemerkt, wenn du reinkommst", "Bleibt im Raum, wenn du gehst"];
+
+/* Tageszeit */
+const ZEITEN = [
+  { id: "tag", label: "Tagsüber", akk: { frisch: 0.5, zitrisch: 0.5, aquatisch: 0.3, oud: -0.5, gourmand: -0.3 }, int: -0.3 },
+  { id: "abend", label: "Abends", akk: { amber: 0.5, vanille: 0.4, oud: 0.3, ledrig: 0.3, aquatisch: -0.4 }, int: 0.3 },
+  { id: "beides", label: "Beides", akk: {}, int: 0 }
+];
+
+/* Büro-tauglich: dämpft Intensität und Süße */
+const BUERO = { akk: { frisch: 0.7, zitrisch: 0.5, moschus: 0.7, pudrig: 0.3, gourmand: -1, suess: -0.5, oud: -1, tabak: -0.5, rauchig: -0.5 }, maxInt: 2.5 };
 
 const JAHRESZEITEN = [
   { id: "sommer", label: "Sommer", akk: { frisch: 1, zitrisch: 1, aquatisch: 1, gruen: 0.5, vanille: -0.7, amber: -0.7, oud: -1, gourmand: -1, tabak: -1 } },
@@ -54,12 +86,10 @@ const JAHRESZEITEN = [
   { id: "ganzjaehrig", label: "Ganzjährig", akk: {} }
 ];
 
-const BUDGETS = [
-  { id: "40", label: "bis 40 €", max: 1 },
-  { id: "80", label: "40–80 €", max: 2 },
-  { id: "150", label: "80–150 €", max: 3 },
-  { id: "egal", label: "egal", max: 4 }
-];
+/* Preis-Regler (v6): Höchstbetrag in Euro. null = egal.
+   Ohne echte Preise aus feed.json schätzen wir den typischen Preis der Preisklasse. */
+const PREIS_STUFEN = [20, 30, 40, 50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 250, 300, 350, 400, 450, 500, null];
+const PREIS_TYPISCH = { 1: 30, 2: 65, 3: 120, 4: 230 };
 
 const DUEFTE = [
   // --- Designer, Herren ---

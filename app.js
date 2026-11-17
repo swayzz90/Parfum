@@ -1,17 +1,24 @@
 /* Duftfinder – Oberfläche */
 
-const SCHRITTE = ["fuer", "charakter", "anlass", "budget"];
+/* Zwei Quiz-Wege: über Duftwelten (Standard) oder über Persönlichkeit */
+const WEGE = {
+  welt: ["fuer", "welt", "wirkung", "budget"],
+  charakter: ["fuer", "charakter", "wirkung", "budget"]
+};
+const schritte = () => WEGE[state.a.modus] || WEGE.welt;
 const MAX_TRAITS = 5;
 
 /* Shop-Suchlinks für den Prototyp. In Phase 2 durch Awin-Deeplinks mit Partner-ID ersetzen. */
 const SHOPS = [
-  { name: "Idealo (Preisvergleich)", url: q => `https://www.idealo.de/preisvergleich/MainSearchProductCategory.html?q=${q}` },
   { name: "Douglas", url: q => `https://www.douglas.de/de/search?q=${q}` },
   { name: "Flaconi", url: q => `https://www.flaconi.de/search/?q=${q}` },
   { name: "Notino", url: q => `https://www.notino.de/search.asp?exps=${q}` },
   { name: "Parfumdreams", url: q => `https://www.parfumdreams.de/?m=5&search=${q}` },
   { name: "Amazon", url: q => `https://www.amazon.de/s?k=${q}` }
 ];
+
+/* Idealo steht ohne eigene Preise oben (einziger echter Vergleich), mit Partner-Preisen ganz unten */
+const IDEALO = { name: "Idealo", url: q => `https://www.idealo.de/preisvergleich/MainSearchProductCategory.html?q=${q}` };
 
 const FARBEN = [
   ["aquat", "#9cc7d8"], ["zitr", "#efd27a"], ["gourmand", "#d9a46b"], ["süß", "#e5ad9e"], ["rose", "#e7a0b1"],
@@ -42,10 +49,13 @@ const BELIEBT = ["dior-sauvage", "chanel-bleu", "creed-aventus", "mfk-br540", "y
 
 let state = neuerStart();
 
-function neuerStart(geschenk = false) {
+function neuerStart(geschenk = false, modus = "welt") {
   return {
     screen: "start",
-    a: { geschenk, fuer: null, traits: [], anlass: null, saison: null, budget: null, stil: "beides" }
+    a: {
+      geschenk, modus, fuer: null, welten: [], traits: [], wirkung: [],
+      naehe: 3, zeit: "beides", saison: "ganzjaehrig", buero: false, maxEuro: 100, stil: "beides"
+    }
   };
 }
 
@@ -130,17 +140,44 @@ function preisText(p) {
 }
 
 const euro = n => n.toLocaleString("de-DE", { style: "currency", currency: "EUR" });
-const feedPreis = d => d.feed && Number(d.feed.preis) > 0 ? Number(d.feed.preis) : null;
+/* Alle Angebote aus feed.json, günstigstes zuerst, ein Eintrag pro Shop.
+   Erlaubt { preis, shop, link } und/oder { angebote: [{ shop, preis, link }, …] }. */
+function alleAngebote(d) {
+  if (!d || !d.feed) return [];
+  const roh = Array.isArray(d.feed.angebote) ? [...d.feed.angebote] : [];
+  if (Number(d.feed.preis) > 0) roh.push({ shop: d.feed.shop, preis: d.feed.preis, link: d.feed.link });
+  const gesehen = new Set();
+  return roh
+    .map(x => ({ shop: (x && x.shop) || "Shop", preis: Number(x && x.preis), link: (x && x.link) || "" }))
+    .filter(x => x.preis > 0)
+    .sort((x, y) => x.preis - y.preis)
+    .filter(x => { const k = normalisiere(x.shop); if (gesehen.has(k)) return false; gesehen.add(k); return true; });
+}
+const feedPreis = d => { const l = alleAngebote(d); return l.length ? l[0].preis : null; };
+const shopKey = name => normalisiere(name || "shop").split(" ")[0] || "shop";
 
 function shopLinks(d) {
   const q = encodeURIComponent(`${d.marke} ${d.name}`);
   const probe = encodeURIComponent(`${d.marke} ${d.name} Probe Abfüllung`);
-  const p = feedPreis(d);
-  const bester = p && d.feed.link
-    ? `<a class="bester" href="${esc(d.feed.link)}" target="_blank" rel="sponsored noopener" data-zaehl="bester-preis/${esc(normalisiere(d.feed.shop || "shop").split(" ")[0])}/${d.id}">Bester Preis: ${euro(p)}*<span>${esc(d.feed.shop || "Shop")} ↗</span></a>` : "";
-  return bester + `<a class="probe" href="https://www.google.com/search?q=${probe}" target="_blank" rel="noopener" data-zaehl="probe/${d.id}">Erst Probe holen<span>suchen ↗</span></a>`
-    + SHOPS.map(s => `<a href="${s.url(q)}" target="_blank" rel="noopener" data-zaehl="shop/${normalisiere(s.name).split(" ")[0]}/${d.id}">${esc(s.name)}<span>öffnen ↗</span></a>`).join("")
-    + `<p>${bester ? "* Partner-Link: Kaufst du darüber, bekommt der Duftfinder eine kleine Provision. Für dich ändert sich der Preis nicht." : "Prototyp: einfache Suchlinks. Später zeigt die App hier den günstigsten Preis."}</p>`;
+  const angebote = alleAngebote(d).filter(o => o.link);
+  const such = s => `<a href="${s.url(q)}" target="_blank" rel="noopener" data-zaehl="shop/${shopKey(s.name)}/${d.id}">${esc(s.name)}<span>suchen ↗</span></a>`;
+  const probeLink = `<a class="probe" href="https://www.google.com/search?q=${probe}" target="_blank" rel="noopener" data-zaehl="probe/${d.id}">Erst Probe holen<span>suchen ↗</span></a>`;
+
+  if (!angebote.length) {
+    return probeLink
+      + `<a href="${IDEALO.url(q)}" target="_blank" rel="noopener" data-zaehl="shop/idealo/${d.id}">Idealo (Preisvergleich)<span>öffnen ↗</span></a>`
+      + SHOPS.map(such).join("")
+      + `<p>Prototyp: einfache Suchlinks. Mit den Partner-Feeds zeigt die App hier echte Preise.</p>`;
+  }
+  const mitAngebot = new Set(angebote.map(o => shopKey(o.shop)));
+  return `<p class="shops-titel">Preise bei unseren Partner-Shops</p>`
+    + angebote.slice(0, 4).map((o, i) =>
+      `<a class="${i === 0 ? "bester" : "angebot"}" href="${esc(o.link)}" target="_blank" rel="sponsored noopener" data-zaehl="${i === 0 ? "bester-preis" : "angebot"}/${shopKey(o.shop)}/${d.id}">${i === 0 ? "Bester Preis: " : ""}${euro(o.preis)}*<span>${esc(o.shop)} ↗</span></a>`).join("")
+    + probeLink
+    + `<p class="shops-titel">In weiteren Shops suchen</p>`
+    + SHOPS.filter(s => !mitAngebot.has(shopKey(s.name))).map(such).join("")
+    + `<a href="${IDEALO.url(q)}" target="_blank" rel="noopener" data-zaehl="shop/idealo/${d.id}">Weitere Preise bei Idealo<span>öffnen ↗</span></a>`
+    + `<p>* Partner-Link: Kaufst du darüber, bekommt der Duftfinder eine kleine Provision. Für dich ändert sich der Preis nicht. Preise können sich seit der letzten Aktualisierung geändert haben.</p>`;
 }
 
 /* ---------- Karten ---------- */
@@ -198,24 +235,35 @@ function screenStart() {
   return `${alarmBanner()}<section class="hero">
     <p class="eyebrow">Parfümberatung in 60 Sekunden</p>
     <h1>Welcher Duft passt zu dir?</h1>
-    <p>Wähle fünf Eigenschaften, Anlass und Budget. Du bekommst drei Düfte: einen bekannten, einen aus der Nische und eine günstige Alternative.</p>
-    <div class="hero-actions">
-      <button class="btn" data-action="los" data-value="ich">Für mich finden</button>
-      <button class="btn secondary" data-action="los" data-value="geschenk">Als Geschenk finden</button>
-      <button class="btn-link" data-action="suche">Du magst schon einen Duft? <b>Ähnliche finden →</b></button>
+    <p>Such dir einen Weg aus. Du bekommst drei Düfte: einen bekannten, einen aus der Nische und eine günstige Alternative.</p>
+    <div class="wege">
+      <button class="weg haupt" data-action="los" data-modus="welt">
+        <span class="weg-icon" aria-hidden="true">🌿</span>
+        <span class="weg-text"><b>Nach Duftwelt</b><small>Wähle Bilder, die du gern riechen würdest</small></span>
+        <span class="pfeil" aria-hidden="true">→</span></button>
+      <button class="weg" data-action="suche">
+        <span class="weg-icon" aria-hidden="true">🔎</span>
+        <span class="weg-text"><b>Ich mag schon einen Duft</b><small>Finde Düfte in ähnlicher Richtung</small></span>
+        <span class="pfeil" aria-hidden="true">→</span></button>
+      <button class="weg" data-action="los" data-modus="charakter">
+        <span class="weg-icon" aria-hidden="true">✨</span>
+        <span class="weg-text"><b>Nach Persönlichkeit</b><small>Fünf Eigenschaften, die dich beschreiben</small></span>
+        <span class="pfeil" aria-hidden="true">→</span></button>
     </div>
+    <button class="btn secondary geschenk-btn" data-action="los" data-modus="charakter" data-geschenk="1">🎁 Als Geschenk finden</button>
+    <p class="privat">🔒 Kein Konto, keine Anmeldung. Deine Antworten bleiben auf deinem Gerät.</p>
     <div class="how">
-      <div><b>1</b><span>Charakter statt Fachbegriffe: Du musst keine Duftnoten kennen.</span></div>
-      <div><b>2</b><span>Ehrliche Karten mit Noten, Intensität und Herkunft statt Werbesprech.</span></div>
+      <div><b>1</b><span>Keine Fachbegriffe: Du musst keine Duftnoten kennen.</span></div>
+      <div><b>2</b><span>Ehrliche Karten mit Duftbild, Verlauf und Intensität statt Werbesprech.</span></div>
       <div><b>3</b><span>Direkt zu den Shops, um Preise zu vergleichen.</span></div>
     </div>
   </section>`;
 }
 
 function kopf(schritt, titel, hinweis) {
-  const i = SCHRITTE.indexOf(schritt) + 1;
-  return `<div class="progress"><span style="width:${(i / SCHRITTE.length) * 100}%"></span></div>
-    <p class="step-label">Schritt ${i} von ${SCHRITTE.length}</p>
+  const i = schritte().indexOf(schritt) + 1;
+  return `<div class="progress"><span style="width:${(i / schritte().length) * 100}%"></span></div>
+    <p class="step-label">Schritt ${i} von ${schritte().length}</p>
     <h2>${titel}</h2>${hinweis ? `<p class="hint">${hinweis}</p>` : ""}`;
 }
 
@@ -256,27 +304,95 @@ function screenCharakter() {
     </section>${navrow(a.traits.length === MAX_TRAITS)}`;
 }
 
-function screenAnlass() {
+function screenWelt() {
   const a = state.a;
-  const wer = a.geschenk ? "Wann trägt die Person ihn am meisten?" : "Wann trägst du ihn am meisten?";
-  return `<section class="step">${kopf("anlass", "Wofür soll der Duft sein?", "Der Anlass entscheidet, wie stark und in welche Richtung er geht.")}
-    <div class="tiles">${ANLAESSE.map(x => tile("anlass", x.id, x.label, x.tipp, a.anlass === x.id)).join("")}</div>
-    <h3>${wer}</h3>
-    <div class="tiles three">${JAHRESZEITEN.map(x => tile("saison", x.id, x.label, "", a.saison === x.id)).join("")}</div>
-    </section>${navrow(!!(a.anlass && a.saison))}`;
+  const voll = a.welten.length >= MAX_WELTEN;
+  const titel = a.geschenk ? "Was würde der Person gefallen?" : "Was würdest du gern riechen?";
+  const kacheln = DUFTWELTEN.map(w => {
+    const on = a.welten.includes(w.id);
+    return `<button class="tile welt ${on ? "selected" : ""}" data-action="welt" data-value="${w.id}" aria-pressed="${on}" ${!on && voll ? "disabled" : ""}>
+      <span class="welt-icon" aria-hidden="true">${w.icon}</span><strong>${esc(w.label)}</strong></button>`;
+  }).join("");
+  return `<section class="step">${kopf("welt", titel, "Wähle bis zu drei Bilder. Duftnoten musst du nicht kennen.")}
+    <div class="tiles welten">${kacheln}</div>
+    <p class="counter"><b>${a.welten.length}</b> von ${MAX_WELTEN} gewählt</p>
+    </section>${navrow(a.welten.length >= 1)}`;
+}
+
+function naeheText(n) {
+  return `<b>${NAEHE[n]}</b><small>${NAEHE_TIPP[n]}</small>`;
+}
+
+function screenWirkung() {
+  const a = state.a;
+  const voll = a.wirkung.length >= MAX_WIRKUNG;
+  const chips = WIRKUNGEN.map(w => {
+    const on = a.wirkung.includes(w.id);
+    return `<button class="chip ${on ? "selected" : ""}" data-action="wirk" data-value="${w.id}" aria-pressed="${on}" ${!on && voll ? "disabled" : ""}>${esc(w.label)}</button>`;
+  }).join("");
+  const seg = (group, liste, wert) => `<div class="seg" role="group">${liste.map(x =>
+    `<button class="${x.id === wert ? "selected" : ""}" data-action="set" data-group="${group}" data-value="${x.id}" aria-pressed="${x.id === wert}">${esc(x.label)}</button>`).join("")}</div>`;
+  return `<section class="step">${kopf("wirkung", "Wie soll er wirken?", "Wähle eine oder zwei Wirkungen.")}
+    <div class="chips">${chips}</div>
+    <h3>Wie nah darf er kommen?</h3>
+    <div class="regel">
+      <input type="range" id="naehe" min="1" max="5" step="1" value="${a.naehe}" aria-label="Wie nah darf der Duft kommen" aria-valuetext="${NAEHE[a.naehe]}">
+      <div class="regel-enden"><span>hautnah</span><span>füllt den Raum</span></div>
+      <p class="regel-wert" id="naehe-wert">${naeheText(a.naehe)}</p>
+    </div>
+    <h3>Wann trägst du ihn?</h3>
+    ${seg("zeit", ZEITEN, a.zeit)}
+    <h3>Jahreszeit</h3>
+    ${seg("saison", JAHRESZEITEN, a.saison)}
+    <label class="schalter">
+      <input type="checkbox" id="buero" ${a.buero ? "checked" : ""}>
+      <span class="schalter-text"><b>Soll im Büro okay sein</b><small>dezenter und weniger süß</small></span>
+      <span class="schalter-knopf" aria-hidden="true"></span>
+    </label>
+    </section>${navrow(a.wirkung.length >= 1)}`;
+}
+
+function preisLabel(v) { return v == null ? "Unbegrenzt" : `bis ${v} €`; }
+function stufeIndex(v) {
+  if (v == null) return PREIS_STUFEN.length - 1;
+  const i = PREIS_STUFEN.findIndex(x => x != null && x >= v);
+  return i < 0 ? PREIS_STUFEN.length - 1 : i;
+}
+function budgetInfo(a) {
+  const n = anzahlImBudget(a);
+  const echt = DUEFTE.some(d => feedPreis(d));
+  return `Dazu passen <b>${n}</b> von ${DUEFTE.filter(d => d.fuer === "u" || a.fuer === "egal" || d.fuer === a.fuer).length} Düften${echt ? "" : " (geschätzte Preise)"}.`;
+}
+function aktualisiereBudget() {
+  const a = state.a;
+  const w = document.getElementById("preis-wert");
+  if (w) w.textContent = preisLabel(a.maxEuro);
+  const i = document.getElementById("preis-info");
+  if (i) i.innerHTML = budgetInfo(a);
+  const r = document.getElementById("preisregler");
+  if (r) { r.setAttribute("aria-valuetext", preisLabel(a.maxEuro)); r.style.setProperty("--fill", `${100 * r.value / r.max}%`); }
 }
 
 function screenBudget() {
   const a = state.a;
-  return `<section class="step">${kopf("budget", "Wie viel möchtest du ausgeben?", "Für eine normale Flasche (meist 30–60 ml).")}
-    <div class="tiles">${BUDGETS.map(x => tile("budget", x.id, x.label, "", a.budget === x.id)).join("")}</div>
+  const idx = stufeIndex(a.maxEuro);
+  return `<section class="step">${kopf("budget", "Wie viel möchtest du höchstens ausgeben?", "Für eine normale Flasche (meist 30–100 ml).")}
+    <div class="regel preis">
+      <p class="preis-wert" id="preis-wert">${preisLabel(a.maxEuro)}</p>
+      <input type="range" id="preisregler" min="0" max="${PREIS_STUFEN.length - 1}" step="1" value="${idx}" style="--fill:${100 * idx / (PREIS_STUFEN.length - 1)}%" aria-label="Höchstpreis" aria-valuetext="${preisLabel(a.maxEuro)}">
+      <div class="regel-enden skala"><span>20 €</span><span class="mitte" style="left:${100 * PREIS_STUFEN.indexOf(100) / (PREIS_STUFEN.length - 1)}%">100 €</span><span>unbegrenzt</span></div>
+      <label class="preisfeld">Oder Betrag eingeben
+        <span><input type="number" id="preisfeld" inputmode="numeric" min="10" step="5" placeholder="unbegrenzt" value="${a.maxEuro ?? ""}" aria-label="Höchstpreis in Euro"> €</span>
+      </label>
+      <p class="counter" id="preis-info">${budgetInfo(a)}</p>
+    </div>
     <h3>Welche Art von Düften?</h3>
     <div class="tiles one">
       ${tile("stil", "beides", "Beides", "Je ein bekannter, ein Nischen- und ein günstiger Duft", a.stil === "beides")}
       ${tile("stil", "bekannt", "Bekannte Marken", "Dior, Chanel, Armani und Co.", a.stil === "bekannt")}
       ${tile("stil", "nische", "Nische", "Seltener, eigenständiger, oft teurer", a.stil === "nische")}
     </div>
-    </section>${navrow(!!a.budget, "Ergebnis zeigen")}`;
+    </section>${navrow(true, "Ergebnis zeigen")}`;
 }
 
 function screenErgebnis() {
@@ -284,16 +400,21 @@ function screenErgebnis() {
   const { karten, weitere } = empfehle(a);
   const tags = [
     a.fuer === "egal" ? "Unisex / egal" : FUER_TEXT[a.fuer],
-    ...a.traits.map(id => EIGENSCHAFTEN.find(e => e.id === id).label),
-    ANLAESSE.find(x => x.id === a.anlass).label,
-    JAHRESZEITEN.find(x => x.id === a.saison).label,
-    BUDGETS.find(x => x.id === a.budget).label
+    ...(a.modus === "charakter"
+      ? a.traits.map(id => EIGENSCHAFTEN.find(e => e.id === id).label)
+      : a.welten.map(id => { const w = DUFTWELTEN.find(e => e.id === id); return `${w.icon} ${w.kurz}`; })),
+    ...a.wirkung.map(id => WIRKUNGEN.find(e => e.id === id).label),
+    NAEHE[a.naehe],
+    ...(a.zeit !== "beides" ? [ZEITEN.find(x => x.id === a.zeit).label] : []),
+    ...(a.saison !== "ganzjaehrig" ? [JAHRESZEITEN.find(x => x.id === a.saison).label] : []),
+    ...(a.buero ? ["Bürotauglich"] : []),
+    preisLabel(a.maxEuro)
   ];
   state.letzteKarten = karten.map(k => k.duft);
   return `<section>
     <div class="result-head">
       <p class="step-label">${a.geschenk ? "Geschenk-Ergebnis" : "Dein Ergebnis"}</p>
-      <h2>${a.geschenk ? "Drei Düfte, die zur Person passen" : "Drei Düfte, die zu dir passen"}</h2>
+      <h2>${a.geschenk ? "Drei Düfte, die zur Person passen" : a.modus === "welt" ? "Drei Düfte für deine Duftwelt" : "Drei Düfte, die zu dir passen"}</h2>
       <p>Tippe auf „Preise vergleichen“, um direkt zu den Shops zu kommen.</p>
       <div class="summary-tags">${tags.map(t => `<span>${esc(t)}</span>`).join("")}</div>
     </div>
@@ -327,7 +448,8 @@ function preisZeile(d) {
   const p = feedPreis(d);
   const m = frisch[d.id] || meldungen[d.id];
   if (!p) return `<span class="ml-preis leise">${preisText(d.preis)}* · echter Preis folgt</span>`;
-  return `<span class="ml-preis ${m ? "gefallen" : ""}">ab ${euro(p)}${d.feed.shop ? " bei " + esc(d.feed.shop) : ""}${m && m.alt > p ? ` <s>${euro(m.alt)}</s>` : ""}</span>`;
+  const shop = (alleAngebote(d)[0] || {}).shop;
+  return `<span class="ml-preis ${m ? "gefallen" : ""}">ab ${euro(p)}${shop && shop !== "Shop" ? " bei " + esc(shop) : ""}${m && m.alt > p ? ` <s>${euro(m.alt)}</s>` : ""}</span>`;
 }
 
 function alarmBox(d) {
@@ -448,7 +570,7 @@ function screenAehnlich() {
 function render(scrollTop = true) {
   const s = state.screen;
   const html = {
-    start: screenStart, fuer: screenFuer, charakter: screenCharakter, anlass: screenAnlass,
+    start: screenStart, fuer: screenFuer, welt: screenWelt, charakter: screenCharakter, wirkung: screenWirkung,
     budget: screenBudget, ergebnis: screenErgebnis, merkliste: screenMerkliste, geteilt: screenGeteilt,
     suche: screenSuche, aehnlich: screenAehnlich
   }[s]();
@@ -476,8 +598,22 @@ document.addEventListener("click", e => {
   else if (act === "merkliste") { state.vorher = state.screen === "merkliste" ? state.vorher : state.screen; gehe("merkliste"); }
   else if (act === "suche") { state = neuerStart(); state.suche = ""; gehe("suche"); document.getElementById("suchfeld")?.focus(); }
   else if (act === "basis") { const q = state.suche; state.basis = el.dataset.id; state.suche = q; zaehle(`suche/${el.dataset.id}`); gehe("aehnlich"); }
-  else if (act === "los") { state = neuerStart(el.dataset.value === "geschenk"); gehe("fuer"); }
-  else if (act === "set") { a[el.dataset.group] = el.dataset.value; render(false); }
+  else if (act === "los") {
+    const geschenk = el.dataset.geschenk === "1" || el.dataset.value === "geschenk";
+    const modus = el.dataset.modus || "welt";
+    state = neuerStart(geschenk, modus);
+    zaehle(`start/${geschenk ? "geschenk" : modus}`);
+    gehe("fuer");
+  }
+  else if (act === "welt" || act === "wirk") {
+    const feld = act === "welt" ? "welten" : "wirkung";
+    const max = act === "welt" ? MAX_WELTEN : MAX_WIRKUNG;
+    const id = el.dataset.value;
+    if (a[feld].includes(id)) a[feld] = a[feld].filter(t => t !== id);
+    else if (a[feld].length < max) a[feld].push(id);
+    const y = window.scrollY; render(false); window.scrollTo(0, y);
+  }
+  else if (act === "set") { a[el.dataset.group] = el.dataset.value; const y = window.scrollY; render(false); window.scrollTo(0, y); }
   else if (act === "trait") {
     const id = el.dataset.value;
     if (a.traits.includes(id)) a.traits = a.traits.filter(t => t !== id);
@@ -485,13 +621,13 @@ document.addEventListener("click", e => {
     render(false);
   }
   else if (act === "weiter") {
-    const i = SCHRITTE.indexOf(state.screen);
-    if (i === SCHRITTE.length - 1) zaehle("quiz/ergebnis");
-    gehe(i < SCHRITTE.length - 1 ? SCHRITTE[i + 1] : "ergebnis");
+    const i = schritte().indexOf(state.screen);
+    if (i === schritte().length - 1) zaehle(`quiz/ergebnis/${a.modus}`);
+    gehe(i < schritte().length - 1 ? schritte()[i + 1] : "ergebnis");
   }
   else if (act === "zurueck") {
-    const i = SCHRITTE.indexOf(state.screen);
-    gehe(i > 0 ? SCHRITTE[i - 1] : "start");
+    const i = schritte().indexOf(state.screen);
+    gehe(i > 0 ? schritte()[i - 1] : "start");
   }
   else if (act === "shops") {
     const box = el.closest("[data-shopbox]")?.querySelector(":scope > .shops");
@@ -542,9 +678,33 @@ document.addEventListener("click", e => {
     history.replaceState(null, "", location.pathname);
     gehe("merkliste");
   }
-  else if (act === "aendern") { gehe("charakter"); }
+  else if (act === "aendern") { gehe(schritte()[1]); }
   else if (act === "neu") { state = neuerStart(); render(); }
   else if (act === "teilen") { zaehle("ergebnis/geteilt"); teilen(); }
+});
+
+/* Regler und Felder im Quiz: nur Anzeige aktualisieren, damit Ziehen flüssig bleibt */
+document.addEventListener("input", e => {
+  const a = state.a;
+  if (e.target.id === "naehe") {
+    a.naehe = Number(e.target.value);
+    e.target.setAttribute("aria-valuetext", NAEHE[a.naehe]);
+    document.getElementById("naehe-wert").innerHTML = naeheText(a.naehe);
+  } else if (e.target.id === "preisregler") {
+    a.maxEuro = PREIS_STUFEN[Number(e.target.value)];
+    const f = document.getElementById("preisfeld");
+    if (f) f.value = a.maxEuro ?? "";
+    aktualisiereBudget();
+  } else if (e.target.id === "preisfeld") {
+    const v = parseFloat(String(e.target.value).replace(",", "."));
+    a.maxEuro = v > 0 ? Math.round(v) : null;
+    const r = document.getElementById("preisregler");
+    if (r) r.value = stufeIndex(a.maxEuro);
+    aktualisiereBudget();
+  }
+});
+document.addEventListener("change", e => {
+  if (e.target.id === "buero") state.a.buero = e.target.checked;
 });
 
 /* Suchfeld: nur die Trefferliste neu zeichnen, damit die Tastatur offen bleibt */

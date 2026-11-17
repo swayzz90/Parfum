@@ -1,11 +1,13 @@
 /* Duftfinder – Matching-Logik (regelbasiert, ohne Server)
- * Punktwert = Charakter-Treffer + Anlass-Bonus + Jahreszeit-Bonus − Abstand zur Wunsch-Intensität
+ * Punktwert = Profil-Treffer (Duftwelten oder Charakter) + Wirkung/Tageszeit/Büro + Jahreszeit
+ *             − Abstand zur gewünschten Nähe (Intensität)
  */
 
 const EIG_BY_ID = Object.fromEntries(EIGENSCHAFTEN.map(e => [e.id, e]));
-const ANL_BY_ID = Object.fromEntries(ANLAESSE.map(e => [e.id, e]));
+const WELT_BY_ID = Object.fromEntries(DUFTWELTEN.map(e => [e.id, e]));
+const WIRK_BY_ID = Object.fromEntries(WIRKUNGEN.map(e => [e.id, e]));
+const ZEIT_BY_ID = Object.fromEntries(ZEITEN.map(e => [e.id, e]));
 const JZ_BY_ID = Object.fromEntries(JAHRESZEITEN.map(e => [e.id, e]));
-const BUDGET_BY_ID = Object.fromEntries(BUDGETS.map(e => [e.id, e]));
 
 function akkSumme(gewichte, duft) {
   let s = 0;
@@ -17,74 +19,122 @@ function passtGeschlecht(duft, fuer) {
   return fuer === "egal" || duft.fuer === "u" || duft.fuer === fuer;
 }
 
+/* Profil-Quellen: gewählte Duftwelten oder Charakterzüge */
+function quellen(a) {
+  return a.modus === "charakter"
+    ? (a.traits || []).map(id => EIG_BY_ID[id]).filter(Boolean)
+    : (a.welten || []).map(id => WELT_BY_ID[id]).filter(Boolean);
+}
+
+/* Geschätzter Preis: echter Preis aus feed.json, sonst typischer Preis der Preisklasse */
+function preisSchaetzung(d) {
+  if (d.feed) {
+    const liste = Array.isArray(d.feed.angebote) ? d.feed.angebote.map(x => Number(x.preis)).filter(p => p > 0) : [];
+    if (Number(d.feed.preis) > 0) liste.push(Number(d.feed.preis));
+    if (liste.length) return Math.min(...liste);
+  }
+  return PREIS_TYPISCH[d.preis] || 100;
+}
+function imPreisrahmen(d, maxEuro) {
+  return maxEuro == null || preisSchaetzung(d) <= maxEuro;
+}
+/* Höchste Preisklasse, die ins Budget passt (für die "günstige Alternative") */
+function maxKlasse(maxEuro) {
+  if (maxEuro == null) return 4;
+  let k = 1;
+  for (const [klasse, p] of Object.entries(PREIS_TYPISCH)) if (p <= maxEuro) k = Math.max(k, Number(klasse));
+  return k;
+}
+function anzahlImBudget(a) {
+  return DUEFTE.filter(d => passtGeschlecht(d, a.fuer || "egal") && imPreisrahmen(d, a.maxEuro)).length;
+}
+
 function zielIntensitaet(a) {
-  const anl = ANL_BY_ID[a.anlass] || ANL_BY_ID.alltag;
-  const mod = a.traits.reduce((s, id) => s + (EIG_BY_ID[id]?.int || 0), 0);
-  return Math.min(5, Math.max(1, anl.ziel + 0.4 * mod));
+  let z = a.naehe || 3;
+  for (const id of a.wirkung || []) z += 0.5 * (WIRK_BY_ID[id]?.int || 0);
+  z += ZEIT_BY_ID[a.zeit]?.int || 0;
+  if (a.modus === "charakter") z += 0.15 * (a.traits || []).reduce((s, id) => s + (EIG_BY_ID[id]?.int || 0), 0);
+  else z += 0.3 * quellen(a).reduce((s, q) => s + (q.int || 0), 0) / Math.max(1, quellen(a).length);
+  if (a.buero) z = Math.min(z, BUERO.maxInt);
+  return Math.min(5, Math.max(1, z));
 }
 
 function bewerte(duft, a) {
-  const beitraege = [];
-  /* Charakter als Kosinus-Ähnlichkeit: Düfte mit vielen starken Akkorden
+  /* Profil als Kosinus-Ähnlichkeit: Düfte mit vielen starken Akkorden
      bekommen so keinen Bonus nur fürs "Vielsein". */
+  const qs = quellen(a);
   const wunsch = {};
-  for (const id of a.traits) {
-    const e = EIG_BY_ID[id];
-    if (e) for (const [k, w] of Object.entries(e.akk)) wunsch[k] = (wunsch[k] || 0) + w;
-  }
+  for (const q of qs) for (const [k, w] of Object.entries(q.akk)) wunsch[k] = (wunsch[k] || 0) + w;
   let skalar = 0, lw = 0, ld = 0;
   for (const [k, w] of Object.entries(wunsch)) { skalar += w * (duft.akk[k] || 0); lw += w * w; }
   for (const v of Object.values(duft.akk)) ld += v * v;
-  const charakter = lw && ld ? 10 * skalar / (Math.sqrt(lw) * Math.sqrt(ld)) : 0;
-  for (const id of a.traits) {
-    const e = EIG_BY_ID[id];
-    if (!e) continue;
+  const profil = lw && ld ? 10 * skalar / (Math.sqrt(lw) * Math.sqrt(ld)) : 0;
+
+  const beitraege = [];
+  for (const q of qs) {
     let summe = 0, bestK = null, bestV = 0;
-    for (const [k, w] of Object.entries(e.akk)) {
+    for (const [k, w] of Object.entries(q.akk)) {
       const v = w * (duft.akk[k] || 0);
       summe += v;
       if (v > bestV) { bestV = v; bestK = k; }
     }
-    beitraege.push({ id, label: e.label, wert: summe, akkord: bestK });
+    beitraege.push({ id: q.id, label: q.kurz || q.label, wert: summe, akkord: bestK });
   }
-  const anlass = akkSumme((ANL_BY_ID[a.anlass] || {}).akk || {}, duft);
-  const saison = akkSumme((JZ_BY_ID[a.saison] || {}).akk || {}, duft);
-  const abstand = Math.abs(duft.int - zielIntensitaet(a));
-  const punkte = charakter + 1.2 * anlass + saison - 0.5 * abstand;
   beitraege.sort((x, y) => y.wert - x.wert);
-  return { punkte, charakter, anlass, saison, abstand, beitraege };
+
+  const wirkungen = (a.wirkung || []).map(id => WIRK_BY_ID[id]).filter(Boolean)
+    .map(w => ({ label: w.label, wert: akkSumme(w.akk, duft) }));
+  const wirkung = wirkungen.reduce((s, w) => s + w.wert, 0) / Math.max(1, wirkungen.length);
+  const zeit = akkSumme(ZEIT_BY_ID[a.zeit]?.akk || {}, duft);
+  const buero = a.buero ? akkSumme(BUERO.akk, duft) : 0;
+  const saison = akkSumme(JZ_BY_ID[a.saison]?.akk || {}, duft);
+  const abstand = Math.abs(duft.int - zielIntensitaet(a));
+  const punkte = profil + 1.2 * wirkung + 0.6 * zeit + buero + saison - 0.6 * abstand;
+  return { punkte, profil, wirkung, wirkungen, zeit, buero, saison, abstand, beitraege };
+}
+
+function liste(woerter) {
+  return woerter.length > 1 ? woerter.slice(0, -1).join(", ") + " und " + woerter[woerter.length - 1] : woerter[0] || "";
 }
 
 function begruendung(r, a) {
   const top = r.beitraege.filter(b => b.wert >= 0.6 && b.akkord).slice(0, 2);
-  const wer = a.geschenk ? "die Person" : "du";
-  const ist = a.geschenk ? "ist" : "bist";
   let satz;
-  if (top.length === 2 && top[0].akkord === top[1].akkord) {
-    satz = `Passt, weil ${wer} ${top[0].label.toLowerCase()} und ${top[1].label.toLowerCase()} ${ist} (${AKKORDE[top[0].akkord]}).`;
-  } else if (top.length === 2) {
-    satz = `Passt, weil ${wer} ${top[0].label.toLowerCase()} (${AKKORDE[top[0].akkord]}) und ${top[1].label.toLowerCase()} (${AKKORDE[top[1].akkord]}) ${ist}.`;
-  } else if (top.length === 1) {
-    satz = `Passt vor allem, weil ${wer} ${top[0].label.toLowerCase()} ${ist} (${AKKORDE[top[0].akkord]}).`;
+  if (a.modus === "charakter") {
+    const wer = a.geschenk ? "die Person" : "du";
+    const ist = a.geschenk ? "ist" : "bist";
+    if (top.length === 2 && top[0].akkord === top[1].akkord) {
+      satz = `Passt, weil ${wer} ${top[0].label.toLowerCase()} und ${top[1].label.toLowerCase()} ${ist} (${AKKORDE[top[0].akkord]}).`;
+    } else if (top.length === 2) {
+      satz = `Passt, weil ${wer} ${top[0].label.toLowerCase()} (${AKKORDE[top[0].akkord]}) und ${top[1].label.toLowerCase()} (${AKKORDE[top[1].akkord]}) ${ist}.`;
+    } else if (top.length === 1) {
+      satz = `Passt vor allem, weil ${wer} ${top[0].label.toLowerCase()} ${ist} (${AKKORDE[top[0].akkord]}).`;
+    } else {
+      satz = "Kein perfekter Charakter-Treffer, aber stark bei Wirkung und Budget.";
+    }
+  } else if (top.length === 2 && top[0].akkord === top[1].akkord) {
+    satz = `Erinnert an „${top[0].label}“ und „${top[1].label}“ (${AKKORDE[top[0].akkord].toLowerCase()}).`;
+  } else if (top.length) {
+    satz = `Erinnert an ${liste(top.map(b => `„${b.label}“ (${AKKORDE[b.akkord].toLowerCase()})`))}.`;
   } else {
-    satz = "Kein perfekter Charakter-Treffer, aber stark für Anlass und Budget.";
+    satz = "Nicht ganz deine Duftwelt, aber stark bei Wirkung und Budget.";
   }
-  const anl = ANL_BY_ID[a.anlass];
-  if (anl && anl.id !== "alltag" && r.anlass >= 0.6) satz += ` Gut für: ${anl.label}.`;
-  if (anl && r.anlass < -0.5) satz += ` Für ${anl.label} eher mutig.`;
+  const passend = (r.wirkungen || []).filter(w => w.wert >= 0.6).map(w => w.label.toLowerCase());
+  if (passend.length) satz += ` Wirkt ${liste(passend)}.`;
+  if (a.buero) satz += r.duft.int >= 4 || r.buero < 0 ? " Fürs Büro eher kräftig." : " Bürotauglich.";
   return satz;
 }
 
 /* Liefert drei unterschiedliche Karten + weitere Treffer */
 function empfehle(a) {
-  const maxPreis = (BUDGET_BY_ID[a.budget] || BUDGET_BY_ID.egal).max;
+  const maxPreis = maxKlasse(a.maxEuro);
   const rangliste = DUEFTE
-    .filter(d => passtGeschlecht(d, a.fuer))
+    .filter(d => passtGeschlecht(d, a.fuer || "egal"))
     .map(d => ({ duft: d, ...bewerte(d, a) }))
     .sort((x, y) => y.punkte - x.punkte);
 
   const benutzt = new Set();
-  const imBudget = r => r.duft.preis <= maxPreis;
+  const imBudget = r => imPreisrahmen(r.duft, a.maxEuro);
 
   /* Bester Treffer im Budget; ist der deutlich schwächer als der beste insgesamt,
      zeigen wir lieber den besseren und markieren ihn als "über Budget". */
@@ -294,4 +344,4 @@ function sucheDuft(text, max = 8) {
     .map(x => x.d);
 }
 
-if (typeof module !== "undefined") module.exports = { aehnlicheDuefte, sucheDuft, normalisiere, empfehle, bewerte, zielIntensitaet, aehnlicheRichtung, regler, verlauf, notenWort };
+if (typeof module !== "undefined") module.exports = { anzahlImBudget, preisSchaetzung, imPreisrahmen, aehnlicheDuefte, sucheDuft, normalisiere, empfehle, bewerte, zielIntensitaet, aehnlicheRichtung, regler, verlauf, notenWort };
